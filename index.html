@@ -8,7 +8,7 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <style>
-    html, body { height: 100%; margin: 0; background: #fff; }
+    html, body { height: 100%; margin: 0; background: #fff; overflow: hidden; }
     body { display: flex; align-items: center; justify-content: center; }
     svg { width: min(80vw, 640px); height: auto; }
   </style>
@@ -40,10 +40,21 @@
       // alternating between y = -3.41 and y = 33.76, stroke 3.55 wide.
       const half = 14.55, period = 2 * half, top = -3.41, bottom = 33.76;
       const radius = 2.9, strokeWidth = 3.55, firstApex = 0.12;
-      const duration = 3000, fade = 250, cycles = 2;
+      const glyphLeft = 0, glyphRight = 39.92, restLeft = 42.79;
+      const duration = 4000, holdFull = 600, shrinkEnd = 3600, fade = 250, restFade = 500;
+      const travel = 4 * period;
+
+      const ns = 'http://www.w3.org/2000/svg';
+      const glyph = document.getElementById('wave');
+      const svg = glyph.ownerSVGElement;
+      const rest = [...svg.querySelectorAll('path')].filter((p) => p !== glyph);
+      const ctm = svg.getScreenCTM();
+      const pageLeft = -ctm.e / ctm.a, pageRight = (innerWidth - ctm.e) / ctm.a;
 
       const apexes = [];
-      for (let i = -2; i <= 2 * cycles + 4; i++) {
+      const first = Math.floor((pageLeft - firstApex) / half) - 2;
+      const last = Math.ceil((pageRight + travel - firstApex) / half) + 2;
+      for (let i = first; i <= last; i++) {
         apexes.push([firstApex + i * half, i % 2 === 0 ? top : bottom]);
       }
       let d = `M${apexes[0]}`;
@@ -59,35 +70,54 @@
       }
       d += `L${apexes[apexes.length - 1]}`;
 
-      const ns = 'http://www.w3.org/2000/svg';
-      const glyph = document.getElementById('wave');
-      const svg = glyph.ownerSVGElement;
+      const set = (el, attrs) => Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
       const clip = document.createElementNS(ns, 'clipPath');
       clip.id = 'wave-window';
       const rect = document.createElementNS(ns, 'rect');
-      Object.entries({ x: 0, y: -5, width: 39.92, height: 41 }).forEach(([k, v]) => rect.setAttribute(k, v));
+      set(rect, { y: -5, height: 41 });
       clip.append(rect);
       const group = document.createElementNS(ns, 'g');
       group.setAttribute('clip-path', 'url(#wave-window)');
       const line = document.createElementNS(ns, 'path');
-      Object.entries({ d, fill: 'none', stroke: '#e3232f', 'stroke-width': strokeWidth }).forEach(([k, v]) => line.setAttribute(k, v));
+      set(line, { d, fill: 'none', stroke: '#e3232f', 'stroke-width': strokeWidth });
       group.append(line);
       svg.prepend(clip);
       svg.append(group);
+      svg.style.overflow = 'visible';
+      glyph.style.opacity = 0;
+      rest.forEach((p) => (p.style.opacity = 0));
 
-      const ease = (x) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
-      let start;
+      const clamp = (x) => Math.min(Math.max(x, 0), 1);
+      const easeInOut = (x) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
+      const lerp = (a, b, k) => a + (b - a) * k;
+      let start, restStart;
       const frame = (now) => {
         start ??= now;
-        const t = Math.min((now - start) / duration, 1);
-        const shift = (ease(t) - 1) * cycles * period;
-        line.setAttribute('transform', `translate(${shift},0)`);
-        const ms = t * duration;
-        const visible = Math.min(ms / fade, (duration - ms) / fade, 1);
-        group.style.opacity = visible;
-        glyph.style.opacity = 1 - visible;
-        if (t < 1) requestAnimationFrame(frame);
-        else { group.remove(); clip.remove(); glyph.style.opacity = ''; }
+        const ms = Math.min(now - start, duration);
+        const u = ms / duration;
+        line.setAttribute('transform', `translate(${-travel * (1 - u) ** 2},0)`);
+
+        const k = easeInOut(clamp((ms - holdFull) / (shrinkEnd - holdFull)));
+        const left = lerp(pageLeft, glyphLeft, k), right = lerp(pageRight, glyphRight, k);
+        set(rect, { x: left, width: right - left });
+
+        if (restStart === undefined && right <= restLeft) restStart = ms;
+        if (restStart !== undefined) {
+          const shown = clamp((ms - restStart) / restFade);
+          rest.forEach((p) => (p.style.opacity = shown));
+        }
+
+        const handoff = clamp((duration - ms) / fade);
+        group.style.opacity = handoff;
+        glyph.style.opacity = 1 - handoff;
+
+        if (ms < duration) requestAnimationFrame(frame);
+        else {
+          group.remove();
+          clip.remove();
+          svg.style.overflow = '';
+          [glyph, ...rest].forEach((p) => (p.style.opacity = ''));
+        }
       };
       requestAnimationFrame(frame);
     })();
