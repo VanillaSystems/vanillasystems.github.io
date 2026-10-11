@@ -41,8 +41,8 @@
       const half = 14.55, period = 2 * half, top = -3.41, bottom = 33.76;
       const radius = 2.9, strokeWidth = 3.55, firstApex = 0.12;
       const glyphLeft = 0, glyphRight = 39.92, restLeft = 42.79;
-      const duration = 4000, holdFull = 600, shrinkEnd = 3600, fade = 250, restFade = 500;
-      const travel = 4 * period;
+      const flatEnd = 600, growEnd = 1500, holdFull = 2100, shrinkEnd = 5100, duration = 5500;
+      const fade = 250, restFade = 500, travel = 7 * period, middle = (top + bottom) / 2;
 
       const ns = 'http://www.w3.org/2000/svg';
       const glyph = document.getElementById('wave');
@@ -79,7 +79,8 @@
       const group = document.createElementNS(ns, 'g');
       group.setAttribute('clip-path', 'url(#wave-window)');
       const line = document.createElementNS(ns, 'path');
-      set(line, { d, fill: 'none', stroke: '#e3232f', 'stroke-width': strokeWidth });
+      // Non-scaling stroke keeps the line thickness constant while the wave grows out of a flat line.
+      set(line, { d, fill: 'none', stroke: '#e3232f', 'stroke-width': strokeWidth * ctm.a, 'vector-effect': 'non-scaling-stroke' });
       group.append(line);
       svg.prepend(clip);
       svg.append(group);
@@ -95,7 +96,8 @@
         start ??= now;
         const ms = Math.min(now - start, duration);
         const u = ms / duration;
-        line.setAttribute('transform', `translate(${-travel * (1 - u) ** 2},0)`);
+        const height = Math.max(easeInOut(clamp((ms - flatEnd) / (growEnd - flatEnd))), 0.001);
+        line.setAttribute('transform', `translate(${-travel * (1 - u) ** 2},${middle * (1 - height)}) scale(1,${height})`);
 
         const k = easeInOut(clamp((ms - holdFull) / (shrinkEnd - holdFull)));
         const left = lerp(pageLeft, glyphLeft, k), right = lerp(pageRight, glyphRight, k);
