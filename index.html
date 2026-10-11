@@ -47,7 +47,9 @@
       const ns = 'http://www.w3.org/2000/svg';
       const glyph = document.getElementById('wave');
       const svg = glyph.ownerSVGElement;
-      const rest = [...svg.querySelectorAll('path')].filter((p) => p !== glyph);
+      const systems = [...svg.querySelectorAll('g g path')];
+      const anilla = [...svg.querySelectorAll('path')].filter((p) => p !== glyph && !systems.includes(p));
+      const rest = [...anilla, ...systems];
       const ctm = svg.getScreenCTM();
       const pageLeft = -ctm.e / ctm.a, pageRight = (innerWidth - ctm.e) / ctm.a;
 
@@ -94,7 +96,7 @@
       let start, restStart;
       const frame = (now) => {
         start ??= now;
-        const ms = Math.min(now - start, duration);
+        const elapsed = now - start, ms = Math.min(elapsed, duration);
         const u = ms / duration;
         const height = Math.max(easeInOut(clamp((ms - flatEnd) / (growEnd - flatEnd))), 0.001);
         line.setAttribute('transform', `translate(${-travel * (1 - u) ** 2},${middle * (1 - height)}) scale(1,${height})`);
@@ -104,22 +106,23 @@
         set(rect, { x: left, width: right - left });
 
         if (restStart === undefined && right <= restLeft) restStart = ms;
-        if (restStart !== undefined) {
-          const shown = clamp((ms - restStart) / restFade);
-          rest.forEach((p) => (p.style.opacity = shown));
-        }
+        const anillaShown = restStart === undefined ? 0 : clamp((elapsed - restStart) / restFade);
+        const systemsShown = restStart === undefined ? 0 : clamp((elapsed - restStart - restFade) / restFade);
+        anilla.forEach((p) => (p.style.opacity = anillaShown));
+        systems.forEach((p) => (p.style.opacity = systemsShown));
 
         const handoff = clamp((duration - ms) / fade);
         group.style.opacity = handoff;
-        glyph.style.opacity = 1 - handoff;
+        glyph.style.opacity = handoff < 1 ? 1 : 0;
 
-        if (ms < duration) requestAnimationFrame(frame);
-        else {
+        if (ms === duration && group.isConnected) {
           group.remove();
           clip.remove();
           svg.style.overflow = '';
-          [glyph, ...rest].forEach((p) => (p.style.opacity = ''));
+          glyph.style.opacity = '';
         }
+        if (systemsShown < 1) requestAnimationFrame(frame);
+        else rest.forEach((p) => (p.style.opacity = ''));
       };
       requestAnimationFrame(frame);
     })();
