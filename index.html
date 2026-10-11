@@ -10,7 +10,7 @@
   <style>
     html, body { height: 100%; margin: 0; background: #fff; }
     body { display: flex; align-items: center; justify-content: center; }
-    svg { width: min(80vw, 640px); height: auto; overflow: visible; }
+    svg { width: min(80vw, 640px); height: auto; }
   </style>
 </head>
 <body>
@@ -35,24 +35,59 @@
   <script>
     (() => {
       if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const wave = document.getElementById('wave');
-      const original = wave.getAttribute('d');
-      const length = wave.getTotalLength();
-      const samples = 900;
-      const points = Array.from({ length: samples }, (_, i) => wave.getPointAtLength((i / samples) * length));
-      const duration = 3000, amplitude = 2.2, wavelength = 18, speed = 2.5;
+
+      // The first glyph is a rounded triangle wave: apexes every 14.55 units,
+      // alternating between y = -3.41 and y = 33.76, stroke 3.55 wide.
+      const half = 14.55, period = 2 * half, top = -3.41, bottom = 33.76;
+      const radius = 2.9, strokeWidth = 3.55, firstApex = 0.12;
+      const duration = 3000, fade = 250, cycles = 2;
+
+      const apexes = [];
+      for (let i = -2; i <= 2 * cycles + 4; i++) {
+        apexes.push([firstApex + i * half, i % 2 === 0 ? top : bottom]);
+      }
+      let d = `M${apexes[0]}`;
+      for (let i = 1; i < apexes.length - 1; i++) {
+        const [px, py] = apexes[i - 1], [ax, ay] = apexes[i], [nx, ny] = apexes[i + 1];
+        const ux = px - ax, uy = py - ay, vx = nx - ax, vy = ny - ay;
+        const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+        const angle = Math.acos((ux * vx + uy * vy) / (lu * lv));
+        const cut = radius / Math.tan(angle / 2);
+        const sweep = (ax - px) * (ny - ay) - (ay - py) * (nx - ax) > 0 ? 1 : 0;
+        d += `L${ax + ux / lu * cut},${ay + uy / lu * cut}`;
+        d += `A${radius},${radius},0,0,${sweep},${ax + vx / lv * cut},${ay + vy / lv * cut}`;
+      }
+      d += `L${apexes[apexes.length - 1]}`;
+
+      const ns = 'http://www.w3.org/2000/svg';
+      const glyph = document.getElementById('wave');
+      const svg = glyph.ownerSVGElement;
+      const clip = document.createElementNS(ns, 'clipPath');
+      clip.id = 'wave-window';
+      const rect = document.createElementNS(ns, 'rect');
+      Object.entries({ x: 0, y: -5, width: 39.92, height: 41 }).forEach(([k, v]) => rect.setAttribute(k, v));
+      clip.append(rect);
+      const group = document.createElementNS(ns, 'g');
+      group.setAttribute('clip-path', 'url(#wave-window)');
+      const line = document.createElementNS(ns, 'path');
+      Object.entries({ d, fill: 'none', stroke: '#e3232f', 'stroke-width': strokeWidth }).forEach(([k, v]) => line.setAttribute(k, v));
+      group.append(line);
+      svg.prepend(clip);
+      svg.append(group);
+
+      const ease = (x) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
       let start;
       const frame = (now) => {
         start ??= now;
-        const t = (now - start) / 1000;
-        if (t >= duration / 1000) { wave.setAttribute('d', original); return; }
-        const envelope = Math.sin(Math.PI * t / (duration / 1000));
-        const d = points.map((p, i) => {
-          const y = p.y + amplitude * envelope * Math.sin(2 * Math.PI * (p.x / wavelength - speed * t));
-          return (i ? 'L' : 'M') + p.x.toFixed(2) + ',' + y.toFixed(2);
-        }).join('') + 'Z';
-        wave.setAttribute('d', d);
-        requestAnimationFrame(frame);
+        const t = Math.min((now - start) / duration, 1);
+        const shift = (ease(t) - 1) * cycles * period;
+        line.setAttribute('transform', `translate(${shift},0)`);
+        const ms = t * duration;
+        const visible = Math.min(ms / fade, (duration - ms) / fade, 1);
+        group.style.opacity = visible;
+        glyph.style.opacity = 1 - visible;
+        if (t < 1) requestAnimationFrame(frame);
+        else { group.remove(); clip.remove(); glyph.style.opacity = ''; }
       };
       requestAnimationFrame(frame);
     })();
